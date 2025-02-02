@@ -26,37 +26,6 @@ config = {
     "device": "cuda" if torch.cuda.is_available() else "cpu"
 }
 
-
-class CustomImageDataset_two_classes(Dataset):
-    def __init__(self, root_dir, transform=None):
-        self.root_dir = root_dir
-        self.transform = transform
-        self.images = []
-        self.labels = []
-        self.label_to_id = {'benign': 0, 'negative': 1}  # 标签到ID的映射
-        self.get_data()
-
-    def get_data(self):
-        # 遍历文件夹，收集图片路径和标签
-        for label in os.listdir(self.root_dir):
-            label_dir = os.path.join(self.root_dir, label)
-            if not os.path.isdir(label_dir): continue
-            for img_name in os.listdir(label_dir):
-                img_path = os.path.join(label_dir, img_name)
-                self.images.append(img_path)
-                self.labels.append(self.label_to_id[label])
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, idx):
-        image = Image.open(self.images[idx])
-        label = self.labels[idx]
-        if self.transform:
-            image = self.transform(image)
-        return image, label
-
-
 # ----------------------------------------
 # 数据集加载（适配单通道图像）
 # ----------------------------------------
