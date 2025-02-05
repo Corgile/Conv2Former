@@ -4,60 +4,44 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from PIL import Image
 from sklearn.metrics import classification_report
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torchvision import transforms
 
+from MyDataset2 import CustomDataset
 from conv2former import Conv2Former
 
 # ----------------------------------------
 # 参数配置
 # ----------------------------------------
-config = {
-    # 数据集路径（需包含train/和val/子文件夹，每个子文件夹按类别存放图片）
+config_1 = {
+    # 数据集路径（需包含train/和valid/子文件夹，每个子文件夹按类别存放图片）
     # "data_dir": "/data/Projects/Python/Swim/traffic_dataset",
-    "data_dir": "/data/Workspace/dataset/png",
-    "num_classes": 10,  # 类别数
-    "batch_size": 128,
-    "lr": 1e-3,  # 学习率
-    "epochs": 10,
-    "model_name": "Conv2Former",  # 使用timm中的Conv2Former预训练模型
+    "data_dir": "/data/Workspace/CIC-IoTDataset2023/bin-class",
+    "num_classes": 2,  # 类别数
+    "batch_size": 8192,
+    "lr": 1e-4,  # 学习率
+    "epochs": 50,
+    "model_name": "Conv2Former",
     "device": "cuda" if torch.cuda.is_available() else "cpu"
 }
 
-# ----------------------------------------
-# 数据集加载（适配单通道图像）
-# ----------------------------------------
-class CustomDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
-        self.root_dir = root_dir
-        self.transform = transform
-        self.classes = sorted(os.listdir(root_dir))
-        self.image_paths = []
-        self.labels = []
-        for label, clazz in enumerate(self.classes):
-            label_dir = os.path.join(root_dir, clazz)
-            if not os.path.isdir(label_dir): continue
-            for img_name in os.listdir(label_dir):
-                self.image_paths.append(os.path.join(label_dir, img_name))
-                self.labels.append(label)
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        # 关键修改：转为灰度图（"L"模式）
-        image = Image.open(self.image_paths[idx]).convert("L")
-        label = self.labels[idx]
-        if self.transform:
-            image = self.transform(image)
-        return image, label
-
+config_2 = {
+    # 数据集路径（需包含train/和valid/子文件夹，每个子文件夹按类别存放图片）
+    "data_dir": "/data/Projects/Python/Swim/traffic_dataset",
+    # "data_dir": "/data/Workspace/dataset/png",
+    "num_classes": 2,  # 类别数
+    "batch_size": 128,
+    "lr": 1e-3,  # 学习率
+    "epochs": 100,
+    "model_name": "Conv2Former",
+    "device": "cuda" if torch.cuda.is_available() else "cpu"
+}
+config = config_1
 
 # 数据增强（适配单通道）
 train_transform = transforms.Compose([
-    transforms.RandomResizedCrop(64, scale=(0.8, 1.0)),
+    # transforms.RandomResizedCrop(64, scale=(0.8, 1.0)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     # 单通道归一化（假设像素范围0~1 → 归一化到[-1,1]）
@@ -65,8 +49,8 @@ train_transform = transforms.Compose([
 ])
 
 valid_transform = transforms.Compose([
-    transforms.Resize(64),
-    transforms.CenterCrop(64),
+    # transforms.Resize(64),
+    # transforms.CenterCrop(64),
     transforms.ToTensor(),
     # 单通道归一化（假设像素范围0~1 → 归一化到[-1,1]）
     transforms.Normalize(mean=[0.5], std=[0.5])
@@ -75,7 +59,9 @@ valid_transform = transforms.Compose([
 # 加载数据集
 train_dataset = CustomDataset(os.path.join(config["data_dir"], "train"), transform=train_transform)
 valid_dataset = CustomDataset(os.path.join(config["data_dir"], "valid"), transform=valid_transform)
-train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True,
+                          num_workers=8,
+                          pin_memory=True)
 valid_loader = DataLoader(valid_dataset, batch_size=config["batch_size"], shuffle=False)
 
 # ----------------------------------------
@@ -100,13 +86,11 @@ def train():
     for images, labels in train_loader:
         images = images.to(config["device"])
         labels = labels.to(config["device"])
-
         optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-
         total_loss += loss.item() * images.size(0)
     return total_loss / len(train_dataset)
 
@@ -131,7 +115,7 @@ def validate():
 
     valid_acc = correct / total
     print(f"Validation Accuracy: {valid_acc:.4f}")
-    print(classification_report(all_labels, all_predicts))
+    print(classification_report(all_labels, all_predicts, zero_division=0))
     return valid_acc
 
 

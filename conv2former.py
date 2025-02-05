@@ -100,10 +100,16 @@ class Conv2Former(nn.Module):
 
 
 # ----------------------------------------
-# 测试模型
+# 测试模型 & 可视化
 # ----------------------------------------
+from torchviz import make_dot
+
 if __name__ == "__main__":
     model = Conv2Former(num_classes=6)
-    dummy_input = torch.randn(2, 3, 64, 64)
+    print(model)
+    dummy_input = torch.randn(2, 1, 64, 64)
     output = model.forward(dummy_input)
     print(output.shape)  # 应为 torch.Size([2, 6])
+    dot = make_dot(output, params=dict(model.named_parameters()))
+    # 生成 conv2former_model.png 文件
+    dot.render("intermediates/conv2former_model", format="png")
