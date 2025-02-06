@@ -4,11 +4,13 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.metrics import classification_report
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from MyDataset2 import CustomDataset
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
+
+from MyDataset import CustomDataset
 from conv2former import Conv2Former
 
 # ----------------------------------------
@@ -19,9 +21,9 @@ config_1 = {
     # "data_dir": "/data/Projects/Python/Swim/traffic_dataset",
     "data_dir": "/data/Workspace/CIC-IoTDataset2023/bin-class",
     "num_classes": 2,  # 类别数
-    "batch_size": 8192,
+    "batch_size": 16384,
     "lr": 1e-4,  # 学习率
-    "epochs": 50,
+    "epochs": 500,
     "model_name": "Conv2Former",
     "device": "cuda" if torch.cuda.is_available() else "cpu"
 }
@@ -73,11 +75,14 @@ model = model.to(config["device"])
 # ----------------------------------------
 # 训练与验证
 # ----------------------------------------
-criterion = nn.CrossEntropyLoss()
+class_weights = torch.tensor([1.0, 10.0])  # 正类权重设为 10
+criterion = nn.CrossEntropyLoss(weight=class_weights.to(config["device"]))
 optimizer = optim.AdamW(model.parameters(), lr=config["lr"])
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config["epochs"])
 
 best_val_acc = 0.0
+
+scaler = GradScaler()  # 用于缩放梯度
 
 
 def train():
@@ -87,10 +92,13 @@ def train():
         images = images.to(config["device"])
         labels = labels.to(config["device"])
         optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        with autocast():  # 混合精度训练
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+        scaler.scale(loss).backward()  # 缩放梯度
+        scaler.step(optimizer)  # 更新参数
+        scaler.update()  # 更新缩放器
+
         total_loss += loss.item() * images.size(0)
     return total_loss / len(train_dataset)
 
