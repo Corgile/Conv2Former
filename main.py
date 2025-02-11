@@ -4,11 +4,10 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from sklearn.metrics import classification_report
 from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from torchvision import transforms
-
-from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
 
 from MyDataset import CustomDataset
 from conv2former import Conv2Former
@@ -28,17 +27,6 @@ config_1 = {
     "device": "cuda" if torch.cuda.is_available() else "cpu"
 }
 
-config_2 = {
-    # 数据集路径（需包含train/和valid/子文件夹，每个子文件夹按类别存放图片）
-    "data_dir": "/data/Projects/Python/Swim/traffic_dataset",
-    # "data_dir": "/data/Workspace/dataset/png",
-    "num_classes": 2,  # 类别数
-    "batch_size": 128,
-    "lr": 1e-3,  # 学习率
-    "epochs": 100,
-    "model_name": "Conv2Former",
-    "device": "cuda" if torch.cuda.is_available() else "cpu"
-}
 config = config_1
 
 # 数据增强（适配单通道）
@@ -75,7 +63,7 @@ model = model.to(config["device"])
 # ----------------------------------------
 # 训练与验证
 # ----------------------------------------
-class_weights = torch.tensor([1.0, 10.0])  # 正类权重设为 10
+class_weights = torch.tensor([7.0, 1.0])
 criterion = nn.CrossEntropyLoss(weight=class_weights.to(config["device"]))
 optimizer = optim.AdamW(model.parameters(), lr=config["lr"])
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config["epochs"])
@@ -123,13 +111,16 @@ def validate():
 
     valid_acc = correct / total
     print(f"Validation Accuracy: {valid_acc:.4f}")
-    print(classification_report(all_labels, all_predicts, zero_division=0))
+    print(classification_report(all_labels, all_predicts, zero_division=0, digits=4))
     return valid_acc
 
 
 # 训练循环
 train_losses = []
 valid_accs = []
+
+early_stop_counter = 0
+patience = 20
 
 for epoch in range(config["epochs"]):
     print(f"Epoch {epoch + 1}/{config['epochs']}")
@@ -143,8 +134,17 @@ for epoch in range(config["epochs"]):
     if valid_acc > best_val_acc:
         best_val_acc = valid_acc
         torch.save(model.state_dict(), "intermediates/best_conv2former.pth")
+        early_stop_counter = 0  # 重新计数
+    else:
+        early_stop_counter += 1  # 未提升次数加一
 
     print(f"Train Loss: {loss:.4f}, Val Acc: {valid_acc:.4f}\n")
+
+    # 触发早停
+    if early_stop_counter >= patience:
+        print(f"Validation accuracy hasn't improved for {patience} epochs. Stopping training.")
+        break
+
 
 # ----------------------------------------
 # 结果可视化
