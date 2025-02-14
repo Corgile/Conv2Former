@@ -1,6 +1,6 @@
-import torch
 import torch.nn as nn
 from einops import rearrange
+from timm.layers import DropPath
 
 
 class ConvModulation(nn.Module):
@@ -37,36 +37,44 @@ class ConvModulation(nn.Module):
 
 
 class Conv2FormerBlock(nn.Module):
-    """Conv2Former 基础块"""
+    """改进后的 Conv2Former 基础块，统一预归一化和 DropPath 应用"""
 
-    def __init__(self, dim, kernel_size=3, mlp_ratio=4.0):
+    def __init__(self, dim, kernel_size=3, mlp_ratio=4.0, drop_path_prob=0.1):
         super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
         self.conv_mod = ConvModulation(dim, kernel_size)
-        # 前馈网络（FFN）
+        self.drop_path1 = DropPath(drop_prob=drop_path_prob)
+
+        self.norm2 = nn.LayerNorm(dim)
         hidden_dim = int(dim * mlp_ratio)
         self.ffn = nn.Sequential(
             nn.Conv2d(dim, hidden_dim, 1),
             nn.GELU(),
             nn.Conv2d(hidden_dim, dim, 1)
         )
-        self.norm = nn.LayerNorm(dim)
+        self.drop_path2 = DropPath(drop_prob=drop_path_prob)
 
     def forward(self, x):
-        # 卷积调制分支
-        x = self.conv_mod(x)
-        # FFN分支
+        # 预归一化 + conv_mod 分支 + 残差
         B, C, H, W = x.shape
-        ffn_input = rearrange(x, "b c h w -> b (h w) c")
-        ffn_input = self.norm(ffn_input)
-        ffn_input = rearrange(ffn_input, "b (h w) c -> b c h w", h=H, w=W)
-        ffn_out = self.ffn(ffn_input)
-        return x + ffn_out  # 残差连接
+        # 将 x 先变换形状以适应 LayerNorm
+        x_norm = rearrange(x, "b c h w -> b (h w) c")
+        x_norm = self.norm1(x_norm)
+        x_norm = rearrange(x_norm, "b (h w) c -> b c h w", h=H, w=W)
+        x = x + self.drop_path1(self.conv_mod(x_norm))
+
+        # FFN 分支（同样预归一化）
+        x_norm = rearrange(x, "b c h w -> b (h w) c")
+        x_norm = self.norm2(x_norm)
+        x_norm = rearrange(x_norm, "b (h w) c -> b c h w", h=H, w=W)
+        x = x + self.drop_path2(self.ffn(x_norm))
+        return x
 
 
 class Conv2Former(nn.Module):
     """完整的 Conv2Former 模型"""
 
-    def __init__(self, in_chans=1, num_classes=6, dims=[64, 128, 256, 512], depths=[2, 2, 6, 2]):
+    def __init__(self, in_chans=1, num_classes=6, dims=None, depths=None):
         super().__init__()
         # 输入 Stem
         self.stem = nn.Sequential(
@@ -97,19 +105,3 @@ class Conv2Former(nn.Module):
             x = stage(x)
         x = self.head(x)
         return x
-
-
-# ----------------------------------------
-# 测试模型 & 可视化
-# ----------------------------------------
-from torchviz import make_dot
-
-if __name__ == "__main__":
-    model = Conv2Former(num_classes=6)
-    print(model)
-    dummy_input = torch.randn(2, 1, 64, 64)
-    output = model.forward(dummy_input)
-    print(output.shape)  # 应为 torch.Size([2, 6])
-    dot = make_dot(output, params=dict(model.named_parameters()))
-    # 生成 conv2former_model.png 文件
-    dot.render("intermediates/conv2former_model", format="png")
