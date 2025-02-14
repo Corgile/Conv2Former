@@ -70,7 +70,7 @@ class Conv2Former(nn.Module):
         for i in range(len(dims)):
             # 深层逐渐增加 drop_path_prob
             stage = nn.Sequential(
-                *[Conv2FormerBlock(dims[i], drop_path_prob=0.05) for _ in range(depths[i])],  # 降低drop_path概率
+                *[Conv2FormerBlock(dims[i], drop_path_prob=0.1) for _ in range(depths[i])],  # 降低drop_path概率
                 nn.Conv2d(dims[i], dims[i + 1] if i < len(dims) - 1 else dims[i], 2, stride=2)
             )
             self.stages.append(stage)
