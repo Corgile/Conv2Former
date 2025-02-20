@@ -29,7 +29,7 @@ class ConvModulation(nn.Module):
         return modulated_feat + x
 
 
-class Conv2FormerBlock(nn.Module):
+class ModFormerBlock(nn.Module):
     def __init__(self, dim, kernel_size=3, mlp_ratio=4.0, drop_path_prob=0.05):  # 降低drop_path概率
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
@@ -59,7 +59,7 @@ class Conv2FormerBlock(nn.Module):
         return x
 
 
-class Conv2Former(nn.Module):
+class ModFormer(nn.Module):
     def __init__(self, in_chans=1, num_classes=6, dims=None, depths=None):
         super().__init__()
         self.stem = nn.Sequential(
@@ -70,7 +70,7 @@ class Conv2Former(nn.Module):
         for i in range(len(dims)):
             # 深层逐渐增加 drop_path_prob
             stage = nn.Sequential(
-                *[Conv2FormerBlock(dims[i], drop_path_prob=0.06) for _ in range(depths[i])],  # 降低drop_path概率
+                *[ModFormerBlock(dims[i], drop_path_prob=0.06) for _ in range(depths[i])],  # 降低drop_path概率
                 nn.Conv2d(dims[i], dims[i + 1] if i < len(dims) - 1 else dims[i], 2, stride=2)
             )
             self.stages.append(stage)
