@@ -3,4 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.11 virtualenv at /data/environment/python/main" />
   </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="GP" project-jdk-type="Python SDK" />
 </project>
