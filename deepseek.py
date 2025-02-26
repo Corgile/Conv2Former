@@ -1,11 +1,6 @@
-import timm.models.layers
 import torch
 import torch.nn as nn
-from einops import rearrange
-import torch.nn.functional as F
-from timm.models.layers import DropPath, trunc_normal_
-
-from timm.models.layers import LayerNorm2d
+from timm.layers import LayerNorm2d, DropPath, trunc_normal_
 
 
 class ChannelAttention(nn.Module):
@@ -51,6 +46,18 @@ class SpatialAttention(nn.Module):
 
 
 class CBAM(nn.Module):
+    """
+    @misc{woo2018cbamconvolutionalblockattention,
+      title={CBAM: Convolutional Block Attention Module},
+      author={Sanghyun Woo and Jongchan Park and Joon-Young Lee and In So Kweon},
+      year={2018},
+      eprint={1807.06521},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1807.06521},
+    }
+    """
+
     def __init__(self, n_channels, kernel_size=7):  # ch_in, kernels
         super().__init__()
         self.channel_attention = ChannelAttention(n_channels)
@@ -67,17 +74,14 @@ class ConvModulation(nn.Module):
         self.dw_conv = nn.Conv2d(dim, dim, kernel_size, padding=kernel_size // 2, groups=dim)
         # TODO: 这里单通道,应该用空间注意力，改成CBAM
         # TODO: 后面得增加到3通道，然后用channel att
-        self.cbam_atten = CBAM(n_channels=1, kernel_size=kernel_size)
+        self.cbam_atten = CBAM(n_channels=dim, kernel_size=kernel_size)
         self.norm = LayerNorm2d(dim)
 
     def forward(self, x):
-        # B, C, H, W = x.shape
         local_feat = self.dw_conv(x)
         channel_scale = self.cbam_atten(local_feat)
         modulated_feat = local_feat * channel_scale
-        # modulated_feat = rearrange(modulated_feat, "b c h w -> b (h w) c")
         modulated_feat = self.norm(modulated_feat)
-        # modulated_feat = rearrange(modulated_feat, "b (h w) c -> b c h w", h=H, w=W)
         return modulated_feat + x
 
 
@@ -98,17 +102,20 @@ class Block(nn.Module):
         self.drop_path2 = DropPath(drop_path_prob)
 
     def forward(self, x):
-        B, C, H, W = x.shape
-        x_norm = rearrange(x, "b c h w -> b (h w) c")
-        x_norm = self.norm1(x_norm)
-        x_norm = rearrange(x_norm, "b (h w) c -> b c h w", h=H, w=W)
-        x = x + self.drop_path1(self.conv_mod(x_norm))
-
-        x_norm = rearrange(x, "b c h w -> b (h w) c")
-        x_norm = self.norm2(x_norm)
-        x_norm = rearrange(x_norm, "b (h w) c -> b c h w", h=H, w=W)
-        x = x + self.drop_path2(self.ffn(x_norm))
+        x = x + self.drop_path1(self.conv_mod(self.norm1(x)))
+        x = x + self.drop_path2(self.ffn(self.norm2(x)))
         return x
+
+
+def _init_weights(m):
+    if isinstance(m, (nn.Conv2d, nn.Linear)):
+        trunc_normal_(m.weight, std=.02)
+        # nn.init.constant_(m.bias, 0)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, LayerNorm2d):
+        nn.init.constant_(m.bias, 0)
+        nn.init.constant_(m.weight, 1.0)
 
 
 class ModFormer(nn.Module):
@@ -116,7 +123,7 @@ class ModFormer(nn.Module):
         super().__init__()
         self.stem = nn.Sequential(
             nn.Conv2d(in_chans, dims[0], 4, stride=4),
-            LayerNorm2d([dims[0], 64 // 4, 64 // 4])  # 需调整 shape
+            LayerNorm2d([64 // 4, 64 // 4, dims[0]])
         )
         self.stages = nn.ModuleList()
         for i in range(len(dims)):
@@ -129,21 +136,11 @@ class ModFormer(nn.Module):
 
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
             LayerNorm2d(dims[-1]),
+            nn.Flatten(),
             nn.Linear(dims[-1], num_classes)
         )
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m):
-        if isinstance(m, (nn.Conv2d, nn.Linear)):
-            trunc_normal_(m.weight, std=.02)
-            # nn.init.constant_(m.bias, 0)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, timm.models.layers.LayerNorm2d):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+        self.apply(_init_weights)
 
     def forward(self, x):
         x = self.stem(x)
