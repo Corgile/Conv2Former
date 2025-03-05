@@ -71,7 +71,7 @@ valid_loader = DataLoader(valid_dataset, batch_size=config["batch_size"], shuffl
 # 5. 模型定义（使用 Conv2Former）
 # -------------------------------
 # 这里 dims 与 depths 可根据实验调节，本示例给出较轻量配置
-from deepseek import ModFormer
+from ModFormer import ModFormer
 
 model = ModFormer(dims=[96, 192, 384, 768], depths=[3, 3, 9, 3], num_classes=config["num_classes"])
 model = model.to(config["device"])

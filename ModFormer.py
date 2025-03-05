@@ -119,10 +119,10 @@ def _init_weights(m):
 
 
 class ModFormer(nn.Module):
-    def __init__(self, in_chans=1, num_classes=6, dims=None, depths=None):
+    def __init__(self, in_chans=1, num_classes=6, dims=None, depths=None, kernel_size=4):
         super().__init__()
         self.stem = nn.Sequential(
-            nn.Conv2d(in_chans, dims[0], 4, stride=4),
+            nn.Conv2d(in_chans, dims[0], kernel_size, stride=4),
             LayerNorm2d([64 // 4, 64 // 4, dims[0]])
         )
         self.stages = nn.ModuleList()
